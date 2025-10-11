@@ -1,9 +1,14 @@
-# auth.py
 import os
 from datetime import datetime, timedelta, timezone
-from jose import jwt
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 from dotenv import load_dotenv
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import User
 
 load_dotenv()
 
@@ -22,5 +27,43 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(subject: str) -> str:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"sub": subject, "iat": int(now.timestamp()), "exp": int(expire.timestamp())}
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    to_encode = {
+        "sub": subject,  # شناسه‌ی کاربر
+        "iat": int(now.timestamp()),  # زمان ساخت
+        "exp": int(expire.timestamp()),  # زمان انقضا
+    }
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return encoded_jwt
+
+# ------------------------------
+# احراز هویت از روی توکن (در هر درخواست)
+# ------------------------------
+# این آبجکت خودش توکن را از هدر Authorization بیرون می‌کشد
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    """از روی توکن، کاربر فعلی را برمی‌گرداند"""
+    credentials_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        # توکن را decode می‌کنیم
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        sub = payload.get("sub")
+        if sub is None:
+            raise credentials_exc
+    except JWTError:
+        raise credentials_exc
+
+    # حالا user_id را از sub می‌گیریم و کاربر را از DB می‌خوانیم
+    user = db.query(User).filter(User.id == int(sub)).first()
+    if not user:
+        raise credentials_exc
+
+    return user
