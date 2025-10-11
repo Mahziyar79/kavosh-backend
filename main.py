@@ -118,6 +118,26 @@ def list_messages(
               .all())
     return rows
 
+@app.delete("/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: int,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # بررسی مالکیت
+    s = (db.query(ChatSession)
+            .filter(ChatSession.id == session_id,
+                    ChatSession.user_id == current_user.id)
+            .first())
+
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    db.delete(s)
+    db.commit()
+
+    return 
+
 # uvicorn main:app --host 127.0.0.1 --port 9000 --reload  اجرای مستقیم روی همین ماشین با پورت 9000
 # docker run -d --name kavosh-backend -p 9000:9000 --env-file .env.docker --restart unless-stopped kavosh-backend ساخت ایمیج
 # login : {
