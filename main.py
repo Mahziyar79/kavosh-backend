@@ -7,8 +7,8 @@ from sqlalchemy import func
 from typing import List
 from database import Base, engine, get_db
 from models import User,Session as ChatSession,Message
-from schemas import LoginRequest, Token, SessionCreate, SessionOut,MessageCreate, MessageOut
-from auth import verify_password, create_access_token, get_current_user
+from schemas import LoginRequest, RegisterRequest, UserOut, Token, SessionCreate, SessionOut,MessageCreate, MessageOut
+from auth import verify_password, hash_password, create_access_token, get_current_user
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +28,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.post("/auth/register", response_model=UserOut, status_code=201)
+def register(payload: RegisterRequest, db: DBSession = Depends(get_db)):
+    email = payload.email.strip()
+    exists = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    if exists:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    user = User(email=email, hashed_password=hash_password(payload.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(subject=str(user.id))
+    return Token(access_token=token)
 
 @app.post("/auth/login", response_model=Token)
 def login(payload: LoginRequest, db: DBSession = Depends(get_db)):
