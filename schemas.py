@@ -36,9 +36,3 @@ class MessageOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
-
-class UserOut(BaseModel):
-    id: int
-    email: EmailStr
-    created_at: datetime
-    model_config = ConfigDict(from_attributes=True)
