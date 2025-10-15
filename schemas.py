@@ -36,3 +36,6 @@ class MessageOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+class SessionUpdate(BaseModel):
+    title: Optional[str] = None

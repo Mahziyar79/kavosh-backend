@@ -7,7 +7,7 @@ from sqlalchemy import func
 from typing import List
 from database import Base, engine, get_db
 from models import User,Session as ChatSession,Message
-from schemas import LoginRequest, RegisterRequest, Token, SessionCreate, SessionOut,MessageCreate, MessageOut
+from schemas import LoginRequest, RegisterRequest, Token, SessionCreate, SessionOut,MessageCreate, MessageOut,SessionUpdate
 from auth import verify_password, hash_password, create_access_token, get_current_user
 
 @asynccontextmanager
@@ -81,6 +81,34 @@ def list_sessions(
               .order_by(ChatSession.created_at.desc())
               .all())
     return rows
+
+
+@app.patch("/sessions/{session_id}", response_model=SessionOut)
+def update_session_title(
+    session_id: int,
+    payload: SessionUpdate,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    selectedSession = (db.query(ChatSession)
+           .filter(ChatSession.id == session_id,
+                   ChatSession.user_id == current_user.id)
+           .first())
+    if not selectedSession:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if payload.title is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    new_title = payload.title.strip()
+    if new_title == "":
+        raise HTTPException(status_code=422, detail="Title cannot be empty")
+
+    selectedSession.title = new_title
+    db.add(selectedSession)
+    db.commit()
+    db.refresh(selectedSession)
+    return selectedSession
 
 @app.post("/sessions/{session_id}/messages", response_model=MessageOut, status_code=201)
 def add_message(
