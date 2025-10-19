@@ -35,10 +35,7 @@ def create_access_token(subject: str) -> str:
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
-# ------------------------------
-# احراز هویت از روی توکن (در هر درخواست)
-# ------------------------------
-# این آبجکت خودش توکن را از هدر Authorization بیرون می‌کشد
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_current_user(
@@ -67,3 +64,10 @@ def get_current_user(
         raise credentials_exc
 
     return user
+
+def get_local_auth_emails() -> set[str]:
+    raw = os.getenv("LOCAL_AUTH_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+def should_use_local_auth(email: str) -> bool:
+    return email.strip().lower() in get_local_auth_emails()

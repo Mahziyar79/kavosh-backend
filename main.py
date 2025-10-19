@@ -8,7 +8,8 @@ from typing import List
 from database import Base, engine, get_db
 from models import User,Session as ChatSession,Message
 from schemas import LoginRequest, RegisterRequest, Token, SessionCreate, SessionOut,MessageCreate, MessageOut,SessionUpdate
-from auth import verify_password, hash_password, create_access_token, get_current_user
+from auth import verify_password, hash_password, create_access_token, get_current_user,should_use_local_auth
+from ad_auth import authenticate_ad_user,is_user_authorized
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,10 +46,31 @@ def register(payload: RegisterRequest, db: DBSession = Depends(get_db)):
 
 @app.post("/auth/login", response_model=Token)
 def login(payload: LoginRequest, db: DBSession = Depends(get_db)):
-    email = payload.email.strip()
-    user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
-    if not user or not verify_password(payload.password, user.hashed_password):
+    email_input = payload.email.strip()
+    email_norm = email_input.lower()
+
+    if should_use_local_auth(email_norm):
+        user = db.query(User).filter(func.lower(User.email) == email_norm).first()
+        if not user or not user.hashed_password or not verify_password(payload.password, user.hashed_password):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        token = create_access_token(subject=str(user.id))
+        return Token(access_token=token)
+
+    ad_info = authenticate_ad_user(email_norm, payload.password)
+    if not ad_info:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    if not is_user_authorized(ad_info):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized to sign in")
+
+    email_final = (ad_info.get("mail") or ad_info.get("upn") or email_norm).strip().lower()
+    user = db.query(User).filter(func.lower(User.email) == email_final).first()
+    if not user:
+        user = User(email=email_final, hashed_password="")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
     token = create_access_token(subject=str(user.id))
     return Token(access_token=token)
 
